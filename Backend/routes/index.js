@@ -17,6 +17,7 @@ import otxProxyRoutes from "./otxProxy.routes.js"; // PATCH 47 Extension
 import newsRoutes from "./news.routes.js"; // Cybersecurity news aggregation
 import riskMatrixRoutes from "./risk-matrix.routes.js"; // 3D Risk Matrix
 import securityMetricsRoutes from "./security-metrics.routes.js"; // Security Metrics Dashboard
+import sopRoutes from "./sop.routes.js"; // Playbooks & SOPs
 // import accessLevelRoutes from './accessLevel.routes.js';
 // import accessRuleRoutes from './accessRule.routes.js';
 
@@ -64,6 +65,7 @@ router.use("/otx-proxy", otxProxyRoutes); // PATCH 47: OTX threat intelligence p
 router.use("/news", newsRoutes); // Cybersecurity news aggregation
 router.use("/risk-matrix", riskMatrixRoutes); // 3D Risk Matrix (Severity × Likelihood × Impact)
 router.use("/security-metrics", securityMetricsRoutes); // Security Metrics Dashboard
+router.use("/sops", sopRoutes); // Playbooks & SOPs
 // router.use("/access-levels", accessLevelRoutes);
 // router.use("/access-rules", accessRuleRoutes);
 

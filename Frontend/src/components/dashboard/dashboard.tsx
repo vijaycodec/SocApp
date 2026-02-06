@@ -38,8 +38,20 @@ export function Dashboard() {
 
         // Use Wazuh API with organization ID for client-specific data
         const orgId = isClientMode && selectedClient?.id ? selectedClient.id : undefined;
-        const data = await wazuhApi.getDashboardMetrics(orgId);
-        setStatsData(data.data || data);
+
+        // Fetch dashboard metrics, total events count, and total logs count in parallel
+        const [metricsResponse, totalEventsResponse, totalLogsResponse] = await Promise.all([
+          wazuhApi.getDashboardMetrics(orgId),
+          wazuhApi.getTotalEventsCount(orgId).catch(() => ({ data: { count: 0 } })),
+          wazuhApi.getTotalLogsCount(orgId).catch(() => ({ data: { count: 0 } }))
+        ]);
+
+        const metricsData = metricsResponse.data || metricsResponse;
+        const totalEvents = totalEventsResponse?.data?.count ?? 0;
+        const totalLogs = totalLogsResponse?.data?.count ?? 0;
+
+        // Merge total events and total logs into stats data
+        setStatsData({ ...metricsData, total_events: totalEvents, total_logs: totalLogs });
         setLastUpdated(new Date().toLocaleString());
 
         // Reset error state on successful fetch

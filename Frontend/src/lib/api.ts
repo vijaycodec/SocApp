@@ -395,6 +395,34 @@ export const wazuhApi = {
     if (orgId) url += `&orgId=${orgId}`;
     return apiRequest(url);
   },
+
+  getTotalEventsCount: (orgId?: string, hours?: number) => {
+    let url = `${WAZUH_BASE_URL}/alerts/total-count`;
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    if (hours) params.append('hours', hours.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
+
+  getTotalLogsCount: (orgId?: string, hours?: number) => {
+    let url = `${WAZUH_BASE_URL}/logs/total-count`;
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    if (hours) params.append('hours', hours.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
+
+  getEventsCountByAgent: (orgId?: string, hours?: number, limit?: number) => {
+    let url = `${WAZUH_BASE_URL}/alerts/count-by-agent`;
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    if (hours) params.append('hours', hours.toString());
+    if (limit) params.append('limit', limit.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
 };
 
 

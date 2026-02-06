@@ -5,7 +5,9 @@ import {
   ExclamationTriangleIcon,
   ClockIcon,
   ShieldCheckIcon,
-  ServerIcon
+  ServerIcon,
+  ChartBarIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline'
 
 // 1. Add your type definition at the top
@@ -18,6 +20,8 @@ export type DashboardMetrics = {
   open_tickets: number
   resolved_today: number
   total_alerts: number
+  total_events?: number
+  total_logs?: number
 }
 
 // 2. Accept `data` as props and use it in your cards
@@ -84,78 +88,80 @@ export const StatsOverview: FC<StatsOverviewProps> = ({ data }) => {
       borderColor: 'border-green-200/50 dark:border-green-800/30',
       viewDetailsLink: '/agents'
     },
+    {
+      name: 'Total Events',
+      value: data.total_events ?? 0,
+      change: '',
+      changeType: 'increase',
+      icon: ChartBarIcon,
+      color: 'text-cyan-600 dark:text-cyan-400',
+      bgColor: 'bg-cyan-100 dark:bg-cyan-900/30',
+      gradientFrom: 'from-cyan-50 dark:from-cyan-900/20',
+      gradientTo: 'to-cyan-100/50 dark:to-cyan-800/10',
+      borderColor: 'border-cyan-200/50 dark:border-cyan-800/30',
+      viewDetailsLink: '/alerts'
+    },
+    {
+      name: 'Total Logs',
+      value: data.total_logs ?? 0,
+      change: '',
+      changeType: 'increase',
+      icon: DocumentTextIcon,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bgColor: 'bg-indigo-100 dark:bg-indigo-900/30',
+      gradientFrom: 'from-indigo-50 dark:from-indigo-900/20',
+      gradientTo: 'to-indigo-100/50 dark:to-indigo-800/10',
+      borderColor: 'border-indigo-200/50 dark:border-indigo-800/30',
+      viewDetailsLink: '/alerts'
+    },
   ]
 
-  // export function StatsOverview() {
-  return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-      {stats.map((item) => (
-        <div
-          key={item.name}
-          className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 px-5 pb-12 pt-5 shadow-md border ${item.borderColor} hover:shadow-lg transition-all duration-200 sm:px-6 sm:pt-6 backdrop-blur-sm`}
-        >
-          <dt>
-            <div className={`absolute rounded-xl p-3 ${item.bgColor} bg-gradient-to-br ${item.gradientFrom} ${item.gradientTo} shadow-sm border ${item.borderColor}`}>
-              <item.icon className={`h-6 w-6 ${item.color}`} aria-hidden="true" />
-            </div>
-            <p className="ml-16 truncate text-sm font-medium text-gray-500 dark:text-gray-400">
-              {item.name}
-            </p>
-          </dt>
-          <dd className="ml-16 flex items-baseline pb-6 sm:pb-7">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {item.value}
-            </p>
-            {/* <p
-              className={`ml-2 flex items-baseline text-sm font-semibold ${item.changeType === 'increase'
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-red-600 dark:text-red-400'
-                }`}
-            >
-              {item.changeType === 'increase' ? (
-                <svg
-                  className="h-5 w-5 flex-shrink-0 self-center text-green-500"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04L10.75 5.612V16.25A.75.75 0 0110 17z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="h-5 w-5 flex-shrink-0 self-center text-red-500"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04L9.25 14.388V3.75A.75.75 0 0110 3z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              )}
-              <span className="sr-only"> {item.changeType === 'increase' ? 'Increased' : 'Decreased'} by </span>
-              {item.change}
-            </p> */}
-            <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-r ${item.gradientFrom} ${item.gradientTo} px-5 py-3 sm:px-6 border-t ${item.borderColor}`}>
-              <div className="text-sm">
-                <a href={item.viewDetailsLink} className={`font-medium ${item.color} hover:opacity-80 flex items-center justify-between`}>
-                  <span>View details</span>
-                  <svg className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                  </svg>
-                  <span className="sr-only"> for {item.name}</span>
-                </a>
-              </div>
-            </div>
-          </dd>
+  // Split stats into two rows: first 4 cards, then remaining 2 cards
+  const firstRowStats = stats.slice(0, 4)
+  const secondRowStats = stats.slice(4)
+
+  const renderCard = (item: typeof stats[0]) => (
+    <div
+      key={item.name}
+      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 px-5 pb-12 pt-5 shadow-md border ${item.borderColor} hover:shadow-lg transition-all duration-200 sm:px-6 sm:pt-6 backdrop-blur-sm`}
+    >
+      <dt>
+        <div className={`absolute rounded-xl p-3 ${item.bgColor} bg-gradient-to-br ${item.gradientFrom} ${item.gradientTo} shadow-sm border ${item.borderColor}`}>
+          <item.icon className={`h-6 w-6 ${item.color}`} aria-hidden="true" />
         </div>
-      ))}
+        <p className="ml-16 truncate text-sm font-medium text-gray-500 dark:text-gray-400">
+          {item.name}
+        </p>
+      </dt>
+      <dd className="ml-16 flex items-baseline pb-6 sm:pb-7">
+        <p className="text-2xl font-bold text-gray-900 dark:text-white">
+          {item.value}
+        </p>
+        <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-r ${item.gradientFrom} ${item.gradientTo} px-5 py-3 sm:px-6 border-t ${item.borderColor}`}>
+          <div className="text-sm">
+            <a href={item.viewDetailsLink} className={`font-medium ${item.color} hover:opacity-80 flex items-center justify-between`}>
+              <span>View details</span>
+              <svg className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+              <span className="sr-only"> for {item.name}</span>
+            </a>
+          </div>
+        </div>
+      </dd>
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+      {/* First row: 4 cards */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {firstRowStats.map(renderCard)}
+      </div>
+      {/* Second row: 2 cards */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-2">
+        {secondRowStats.map(renderCard)}
+      </div>
     </div>
   )
 } 
