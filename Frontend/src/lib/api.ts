@@ -423,6 +423,36 @@ export const wazuhApi = {
     if (params.toString()) url += `?${params.toString()}`;
     return apiRequest(url);
   },
+
+  getLogsCountByAgent: (orgId?: string, hours?: number, limit?: number) => {
+    let url = `${WAZUH_BASE_URL}/logs/count-by-agent`;
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    if (hours) params.append('hours', hours.toString());
+    if (limit) params.append('limit', limit.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
+
+  getAgentEvents: (agentId: string, options?: { hours?: number; limit?: number; offset?: number }) => {
+    let url = `${WAZUH_BASE_URL}/agent/${agentId}/events`;
+    const params = new URLSearchParams();
+    if (options?.hours) params.append('hours', options.hours.toString());
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
+
+  getAgentLogs: (agentId: string, options?: { hours?: number; limit?: number; offset?: number }) => {
+    let url = `${WAZUH_BASE_URL}/agent/${agentId}/logs`;
+    const params = new URLSearchParams();
+    if (options?.hours) params.append('hours', options.hours.toString());
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
 };
 
 

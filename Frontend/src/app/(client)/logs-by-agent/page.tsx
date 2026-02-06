@@ -7,37 +7,126 @@ import {
   ComputerDesktopIcon,
   ArrowPathIcon,
   MagnifyingGlassIcon,
-  ChartBarSquareIcon,
-  ExclamationTriangleIcon,
+  DocumentTextIcon,
   ArrowUpIcon,
   ArrowDownIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 
-interface AgentEventData {
+interface TrendPoint {
+  timestamp: string
+  count: number
+}
+
+interface AgentLogData {
   agent_id: string
   agent_name: string
   agent_ip: string
-  event_count: number
+  log_count: number
+  trend?: TrendPoint[]
 }
 
-interface EventsByAgentResponse {
-  agents: AgentEventData[]
+interface LogsByAgentResponse {
+  agents: AgentLogData[]
   total_agents: number
-  total_events: number
+  total_logs: number
+  trend_interval?: string
 }
 
-type SortField = 'agent_id' | 'agent_name' | 'agent_ip' | 'event_count'
+// Sparkline Chart Component
+function SparklineChart({ data, width = 120, height = 32 }: { data: TrendPoint[], width?: number, height?: number }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center text-gray-400 text-xs" style={{ width, height }}>
+        No data
+      </div>
+    )
+  }
+
+  const counts = data.map(d => d.count)
+  const maxVal = Math.max(...counts, 1)
+  const minVal = Math.min(...counts)
+  const range = maxVal - minVal || 1
+
+  // Generate SVG path for the line
+  const padding = 2
+  const chartWidth = width - padding * 2
+  const chartHeight = height - padding * 2
+
+  const points = data.map((point, i) => {
+    const x = padding + (i / (data.length - 1 || 1)) * chartWidth
+    const y = padding + chartHeight - ((point.count - minVal) / range) * chartHeight
+    return `${x},${y}`
+  }).join(' ')
+
+  // Create area path (for gradient fill)
+  const areaPath = `M ${padding},${padding + chartHeight} ` +
+    data.map((point, i) => {
+      const x = padding + (i / (data.length - 1 || 1)) * chartWidth
+      const y = padding + chartHeight - ((point.count - minVal) / range) * chartHeight
+      return `L ${x},${y}`
+    }).join(' ') +
+    ` L ${padding + chartWidth},${padding + chartHeight} Z`
+
+  // Determine trend color based on overall trend
+  const firstHalf = counts.slice(0, Math.floor(counts.length / 2))
+  const secondHalf = counts.slice(Math.floor(counts.length / 2))
+  const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / (firstHalf.length || 1)
+  const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / (secondHalf.length || 1)
+
+  const isIncreasing = secondAvg > firstAvg * 1.1
+  const isDecreasing = secondAvg < firstAvg * 0.9
+
+  const strokeColor = isIncreasing ? '#ef4444' : isDecreasing ? '#22c55e' : '#a855f7'
+  const fillColor = isIncreasing ? '#ef444420' : isDecreasing ? '#22c55e20' : '#a855f720'
+
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      <defs>
+        <linearGradient id={`gradient-${strokeColor}`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={strokeColor} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={strokeColor} stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+      {/* Area fill */}
+      <path
+        d={areaPath}
+        fill={fillColor}
+        strokeWidth="0"
+      />
+      {/* Line */}
+      <polyline
+        points={points}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Last point dot */}
+      {data.length > 0 && (
+        <circle
+          cx={padding + chartWidth}
+          cy={padding + chartHeight - ((counts[counts.length - 1] - minVal) / range) * chartHeight}
+          r="2.5"
+          fill={strokeColor}
+        />
+      )}
+    </svg>
+  )
+}
+
+type SortField = 'agent_id' | 'agent_name' | 'agent_ip' | 'log_count'
 type SortOrder = 'asc' | 'desc'
 
-export default function EventsByAgentPage() {
+export default function LogsByAgentPage() {
   const { selectedClient } = useClient()
-  const [data, setData] = useState<EventsByAgentResponse | null>(null)
+  const [data, setData] = useState<LogsByAgentResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [timeFilter, setTimeFilter] = useState<number | undefined>(undefined)
-  const [sortField, setSortField] = useState<SortField>('event_count')
+  const [sortField, setSortField] = useState<SortField>('log_count')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
   const fetchData = async () => {
@@ -45,11 +134,11 @@ export default function EventsByAgentPage() {
     setError(null)
     try {
       const orgId = selectedClient?.id
-      const response = await wazuhApi.getEventsCountByAgent(orgId, timeFilter, 100)
+      const response = await wazuhApi.getLogsCountByAgent(orgId, timeFilter, 100)
       setData(response.data || response)
     } catch (err: any) {
-      console.error('Error fetching events by agent:', err)
-      setError(err.message || 'Failed to fetch events by agent')
+      console.error('Error fetching logs by agent:', err)
+      setError(err.message || 'Failed to fetch logs by agent')
     } finally {
       setLoading(false)
     }
@@ -81,7 +170,7 @@ export default function EventsByAgentPage() {
       let aVal: any = a[sortField]
       let bVal: any = b[sortField]
 
-      if (sortField === 'event_count') {
+      if (sortField === 'log_count') {
         aVal = Number(aVal) || 0
         bVal = Number(bVal) || 0
       } else {
@@ -112,16 +201,16 @@ export default function EventsByAgentPage() {
     return new Intl.NumberFormat().format(num)
   }
 
-  const getEventCountColor = (count: number, maxCount: number) => {
+  const getLogCountColor = (count: number, maxCount: number) => {
     const ratio = count / maxCount
     if (ratio > 0.7) return 'text-red-600 dark:text-red-400'
     if (ratio > 0.4) return 'text-yellow-600 dark:text-yellow-400'
     return 'text-green-600 dark:text-green-400'
   }
 
-  const maxEventCount = React.useMemo(() => {
+  const maxLogCount = React.useMemo(() => {
     if (!data?.agents?.length) return 1
-    return Math.max(...data.agents.map(a => a.event_count || 0))
+    return Math.max(...data.agents.map(a => a.log_count || 0))
   }, [data])
 
   return (
@@ -130,17 +219,17 @@ export default function EventsByAgentPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <ChartBarSquareIcon className="h-7 w-7 text-blue-500" />
-            Events By Agent
+            <DocumentTextIcon className="h-7 w-7 text-purple-500" />
+            Logs (Archives)
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View events (alerts) distribution across all agents/machines
+            View logs distribution across all agents/machines
           </p>
         </div>
         <button
           onClick={fetchData}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
         >
           <ArrowPathIcon className={clsx('h-5 w-5', loading && 'animate-spin')} />
           Refresh
@@ -165,13 +254,13 @@ export default function EventsByAgentPage() {
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                <ExclamationTriangleIcon className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <DocumentTextIcon className="h-6 w-6 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Total Events</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Total Logs</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {formatNumber(data.total_events)}
+                  {formatNumber(data.total_logs)}
                 </p>
               </div>
             </div>
@@ -189,14 +278,14 @@ export default function EventsByAgentPage() {
             placeholder="Search by agent name, ID, or IP..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
         </div>
         {/* Time Filter */}
         <select
           value={timeFilter || ''}
           onChange={(e) => setTimeFilter(e.target.value ? Number(e.target.value) : undefined)}
-          className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
         >
           <option value="">All Time</option>
           <option value="1">Last 1 Hour</option>
@@ -217,8 +306,8 @@ export default function EventsByAgentPage() {
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <ArrowPathIcon className="h-8 w-8 text-blue-500 animate-spin" />
-          <span className="ml-2 text-gray-600 dark:text-gray-400">Loading events data...</span>
+          <ArrowPathIcon className="h-8 w-8 text-purple-500 animate-spin" />
+          <span className="ml-2 text-gray-600 dark:text-gray-400">Loading logs data...</span>
         </div>
       )}
 
@@ -248,10 +337,13 @@ export default function EventsByAgentPage() {
                     IP Address <SortIcon field="agent_ip" />
                   </th>
                   <th
-                    onClick={() => handleSort('event_count')}
+                    onClick={() => handleSort('log_count')}
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
-                    Event Count <SortIcon field="event_count" />
+                    Log Count <SortIcon field="log_count" />
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Trend
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Distribution
@@ -261,7 +353,7 @@ export default function EventsByAgentPage() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredAndSortedAgents.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       {searchTerm ? 'No agents match your search' : 'No agents found'}
                     </td>
                   </tr>
@@ -289,20 +381,23 @@ export default function EventsByAgentPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={clsx(
                           'text-sm font-semibold',
-                          getEventCountColor(agent.event_count, maxEventCount)
+                          getLogCountColor(agent.log_count, maxLogCount)
                         )}>
-                          {formatNumber(agent.event_count)}
+                          {formatNumber(agent.log_count)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <SparklineChart data={agent.trend || []} />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
                           <div
                             className={clsx(
                               'h-2.5 rounded-full transition-all duration-300',
-                              agent.event_count / maxEventCount > 0.7 ? 'bg-red-500' :
-                              agent.event_count / maxEventCount > 0.4 ? 'bg-yellow-500' : 'bg-green-500'
+                              agent.log_count / maxLogCount > 0.7 ? 'bg-red-500' :
+                              agent.log_count / maxLogCount > 0.4 ? 'bg-yellow-500' : 'bg-green-500'
                             )}
-                            style={{ width: `${(agent.event_count / maxEventCount) * 100}%` }}
+                            style={{ width: `${(agent.log_count / maxLogCount) * 100}%` }}
                           />
                         </div>
                       </td>

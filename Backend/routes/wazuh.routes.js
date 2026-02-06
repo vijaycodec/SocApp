@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAgentsBasic, getAgentsSummary, getAgentsStream, quarantineAgent, getQuarantineStatus } from '../controllers/agents.controller.js';
-import { getAlerts, getAlertsCount, getTotalEventsCount, getTotalLogsCount, getEventsCountByAgent } from '../controllers/alerts.controller.js';
+import { getAlerts, getAlertsCount, getTotalEventsCount, getTotalLogsCount, getEventsCountByAgent, getLogsCountByAgent, getAgentEvents, getAgentLogs } from '../controllers/alerts.controller.js';
 import { getDashboardMetrics } from '../controllers/dashboardMetrics.controller.js';
 import { getCompliance, getComplianceFramework } from '../controllers/compliance.controller.js';
 import {
@@ -42,6 +42,11 @@ router.get("/alerts", getAlerts);
 
 // Logs routes
 router.get("/logs/total-count", getTotalLogsCount);  // Total logs count from wazuh-archives-*
+router.get("/logs/count-by-agent", getLogsCountByAgent);  // Logs count grouped by agent/machine
+
+// Agent-specific events and logs routes
+router.get("/agent/:agentId/events", getAgentEvents);  // Get events for a specific agent
+router.get("/agent/:agentId/logs", getAgentLogs);  // Get logs for a specific agent
 
 // Dashboard metrics routes
 router.get("/dashboard-metrics", getDashboardMetrics);

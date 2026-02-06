@@ -16,7 +16,8 @@ import {
   ShieldExclamationIcon,
   ServerIcon,
   BookOpenIcon,
-  ChartBarSquareIcon
+  ChartBarSquareIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { SystemStatus } from './system-status'
@@ -51,6 +52,7 @@ export function Sidebar() {
       { name: 'Asset Register', href: '/asset-register', icon: ServerIcon, badge: null, requiredPermission: 'assets:read' },
       { name: 'Agents Overview', href: '/agents', icon: UsersIcon, badge: null, requiredPermission: 'agents:read' },
       { name: 'Events By Agent', href: '/events-by-agent', icon: ChartBarSquareIcon, badge: null, requiredPermission: 'alerts:read' },
+      { name: 'Logs (Archives)', href: '/logs-by-agent', icon: DocumentTextIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'SIEM Portal', href: '/siem', icon: CpuChipIcon, badge: null, requiredPermission: 'siem:access' },
     ]
   }
