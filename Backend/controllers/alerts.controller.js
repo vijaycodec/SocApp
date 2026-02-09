@@ -545,8 +545,10 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
     const authString = `${INDEXER_USER}:${INDEXER_PASS}`;
     const authEncoded = Buffer.from(authString).toString("base64");
 
-    // Build time filter
+    // Build time filter - default to last 24 hours for trend data
     let timeFilter = null;
+    let trendHours = 24; // Default trend period
+
     if (from && to) {
       timeFilter = {
         range: {
@@ -556,8 +558,11 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
           }
         }
       };
+      // Calculate hours difference for trend interval
+      trendHours = Math.max(1, Math.ceil((new Date(to) - new Date(from)) / (1000 * 60 * 60)));
     } else if (hours) {
       const hoursAgo = parseInt(hours) || 24;
+      trendHours = hoursAgo;
       const now = new Date();
       const startTime = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
       timeFilter = {
@@ -570,7 +575,15 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
       };
     }
 
-    // Build aggregation query
+    // Determine histogram interval based on time range
+    let histogramInterval = '1h'; // Default hourly
+    if (trendHours > 168) { // More than 7 days
+      histogramInterval = '1d';
+    } else if (trendHours > 24) { // More than 1 day
+      histogramInterval = '3h';
+    }
+
+    // Build aggregation query with time-series trend data
     const aggQuery = {
       size: 0,
       query: timeFilter ? timeFilter : { match_all: {} },
@@ -592,6 +605,14 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
                 field: "agent.ip",
                 size: 1
               }
+            },
+            // Add time-series trend data using date histogram
+            events_over_time: {
+              date_histogram: {
+                field: "@timestamp",
+                fixed_interval: histogramInterval,
+                min_doc_count: 0
+              }
             }
           }
         }
@@ -610,19 +631,30 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
       }
     );
 
-    // Parse aggregation results
+    // Parse aggregation results with trend data
     const buckets = aggResponse.data.aggregations?.events_per_agent?.buckets || [];
-    const agentEvents = buckets.map(bucket => ({
-      agent_id: bucket.key,
-      agent_name: bucket.agent_name?.buckets?.[0]?.key || 'Unknown',
-      agent_ip: bucket.agent_ip?.buckets?.[0]?.key || 'N/A',
-      event_count: bucket.doc_count
-    }));
+    const agentEvents = buckets.map(bucket => {
+      // Extract trend data from date histogram
+      const trendBuckets = bucket.events_over_time?.buckets || [];
+      const trend = trendBuckets.map(tb => ({
+        timestamp: tb.key_as_string || new Date(tb.key).toISOString(),
+        count: tb.doc_count
+      }));
+
+      return {
+        agent_id: bucket.key,
+        agent_name: bucket.agent_name?.buckets?.[0]?.key || 'Unknown',
+        agent_ip: bucket.agent_ip?.buckets?.[0]?.key || 'N/A',
+        event_count: bucket.doc_count,
+        trend: trend // Array of {timestamp, count} for sparkline chart
+      };
+    });
 
     const responseData = {
       agents: agentEvents,
       total_agents: agentEvents.length,
-      total_events: agentEvents.reduce((sum, agent) => sum + agent.event_count, 0)
+      total_events: agentEvents.reduce((sum, agent) => sum + agent.event_count, 0),
+      trend_interval: histogramInterval
     };
 
     // Set cache

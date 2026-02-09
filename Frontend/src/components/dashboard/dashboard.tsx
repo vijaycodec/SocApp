@@ -50,8 +50,19 @@ export function Dashboard() {
         const totalEvents = totalEventsResponse?.data?.count ?? 0;
         const totalLogs = totalLogsResponse?.data?.count ?? 0;
 
-        // Merge total events and total logs into stats data
-        setStatsData({ ...metricsData, total_events: totalEvents, total_logs: totalLogs });
+        // Calculate events/sec and logs/sec (based on 24 hours by default)
+        const secondsIn24Hours = 24 * 60 * 60;
+        const eventsPerSec = totalEvents / secondsIn24Hours;
+        const logsPerSec = totalLogs / secondsIn24Hours;
+
+        // Merge total events, total logs, and rates into stats data
+        setStatsData({
+          ...metricsData,
+          total_events: totalEvents,
+          total_logs: totalLogs,
+          events_per_sec: eventsPerSec,
+          logs_per_sec: logsPerSec
+        });
         setLastUpdated(new Date().toLocaleString());
 
         // Reset error state on successful fetch

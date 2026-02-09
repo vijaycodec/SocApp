@@ -7,7 +7,8 @@ import {
   ShieldCheckIcon,
   ServerIcon,
   ChartBarIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  BoltIcon
 } from '@heroicons/react/24/outline'
 
 // 1. Add your type definition at the top
@@ -22,6 +23,8 @@ export type DashboardMetrics = {
   total_alerts: number
   total_events?: number
   total_logs?: number
+  events_per_sec?: number
+  logs_per_sec?: number
 }
 
 // 2. Accept `data` as props and use it in your cards
@@ -33,6 +36,15 @@ export const StatsOverview: FC<StatsOverviewProps> = ({ data }) => {
 
   if (!data) {
     return <div className="text-sm text-gray-500">Loading stats...</div>
+  }
+
+  // Format rate values for display
+  const formatRate = (rate?: number): string => {
+    if (rate === undefined || rate === null) return '0'
+    if (rate >= 1000) return `${(rate / 1000).toFixed(1)}K`
+    if (rate >= 1) return rate.toFixed(1)
+    if (rate >= 0.01) return rate.toFixed(2)
+    return rate.toFixed(3)
   }
 
   const stats = [
@@ -99,7 +111,33 @@ export const StatsOverview: FC<StatsOverviewProps> = ({ data }) => {
       gradientFrom: 'from-cyan-50 dark:from-cyan-900/20',
       gradientTo: 'to-cyan-100/50 dark:to-cyan-800/10',
       borderColor: 'border-cyan-200/50 dark:border-cyan-800/30',
-      viewDetailsLink: '/alerts'
+      viewDetailsLink: '/events-by-agent'
+    },
+    {
+      name: 'Events / sec',
+      value: formatRate(data.events_per_sec),
+      change: '',
+      changeType: 'increase',
+      icon: BoltIcon,
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bgColor: 'bg-emerald-100 dark:bg-emerald-900/30',
+      gradientFrom: 'from-emerald-50 dark:from-emerald-900/20',
+      gradientTo: 'to-emerald-100/50 dark:to-emerald-800/10',
+      borderColor: 'border-emerald-200/50 dark:border-emerald-800/30',
+      viewDetailsLink: '/events-by-agent'
+    },
+    {
+      name: 'Logs / sec',
+      value: formatRate(data.logs_per_sec),
+      change: '',
+      changeType: 'increase',
+      icon: BoltIcon,
+      color: 'text-violet-600 dark:text-violet-400',
+      bgColor: 'bg-violet-100 dark:bg-violet-900/30',
+      gradientFrom: 'from-violet-50 dark:from-violet-900/20',
+      gradientTo: 'to-violet-100/50 dark:to-violet-800/10',
+      borderColor: 'border-violet-200/50 dark:border-violet-800/30',
+      viewDetailsLink: '/logs-by-agent'
     },
     {
       name: 'Total Logs',
@@ -112,7 +150,7 @@ export const StatsOverview: FC<StatsOverviewProps> = ({ data }) => {
       gradientFrom: 'from-indigo-50 dark:from-indigo-900/20',
       gradientTo: 'to-indigo-100/50 dark:to-indigo-800/10',
       borderColor: 'border-indigo-200/50 dark:border-indigo-800/30',
-      viewDetailsLink: '/alerts'
+      viewDetailsLink: '/logs-by-agent'
     },
   ]
 
@@ -158,8 +196,8 @@ export const StatsOverview: FC<StatsOverviewProps> = ({ data }) => {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {firstRowStats.map(renderCard)}
       </div>
-      {/* Second row: 2 cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-2">
+      {/* Second row: 4 cards (Total Events, Events/sec, Logs/sec, Total Logs) */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {secondRowStats.map(renderCard)}
       </div>
     </div>
