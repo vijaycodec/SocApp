@@ -453,6 +453,15 @@ export const wazuhApi = {
     if (params.toString()) url += `?${params.toString()}`;
     return apiRequest(url);
   },
+
+  getTopRiskEntities: (orgId?: string, hours?: number) => {
+    let url = `${WAZUH_BASE_URL}/alerts/top-risk-entities`;
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    if (hours) params.append('hours', hours.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiRequest(url);
+  },
 };
 
 

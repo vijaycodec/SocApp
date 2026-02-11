@@ -25,6 +25,8 @@ interface AgentEventData {
   agent_name: string
   agent_ip: string
   event_count: number
+  critical_count?: number
+  major_count?: number
   trend?: TrendPoint[]
 }
 
@@ -600,6 +602,7 @@ export default function EventsByAgentPage() {
               </div>
             </div>
           </div>
+
           <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">

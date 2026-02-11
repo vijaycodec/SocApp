@@ -606,6 +606,22 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
                 size: 1
               }
             },
+            // Count critical alerts (severity >= 15)
+            critical_count: {
+              filter: {
+                range: {
+                  "rule.level": { gte: 15 }
+                }
+              }
+            },
+            // Count major alerts (severity 11-14)
+            major_count: {
+              filter: {
+                range: {
+                  "rule.level": { gte: 11, lt: 15 }
+                }
+              }
+            },
             // Add time-series trend data using date histogram
             events_over_time: {
               date_histogram: {
@@ -646,6 +662,8 @@ const getEventsCountByAgent = asyncHandler(async (req, res) => {
         agent_name: bucket.agent_name?.buckets?.[0]?.key || 'Unknown',
         agent_ip: bucket.agent_ip?.buckets?.[0]?.key || 'N/A',
         event_count: bucket.doc_count,
+        critical_count: bucket.critical_count?.doc_count || 0,
+        major_count: bucket.major_count?.doc_count || 0,
         trend: trend // Array of {timestamp, count} for sparkline chart
       };
     });
@@ -1019,6 +1037,371 @@ const getAgentLogs = asyncHandler(async (req, res) => {
   }
 });
 
+// Get top 5 risk entities (hosts, users, processes) based on critical alerts
+const getTopRiskEntities = asyncHandler(async (req, res) => {
+  try {
+    const indexerCreds = req.clientCreds?.indexerCredentials;
+    const organizationId = req.clientCreds?.organizationId;
+
+    if (!indexerCreds) {
+      throw new ApiError(400, "Indexer credentials not found for this client");
+    }
+
+    const { host: INDEXER_HOST, username: INDEXER_USER, password: INDEXER_PASS } = indexerCreds;
+
+    // Get optional time range parameters - no default (all time if not specified)
+    const { hours, from, to } = req.query;
+
+    // Check cache - use 'all' when no hours specified
+    const cacheKey = `top_risk_entities:${organizationId}:${hours || 'all'}:${from || ''}:${to || ''}`;
+    try {
+      const cachedData = await redisClient.get(cacheKey);
+      if (cachedData) {
+        console.log('✅ [TOP RISK ENTITIES] Cache HIT - Data fetched from Redis (15 min cache)');
+        res.setHeader('X-Cache', 'HIT');
+        return res.status(200).json(
+          new ApiResponse(200, JSON.parse(cachedData), "Top risk entities fetched successfully")
+        );
+      }
+      console.log('❌ [TOP RISK ENTITIES] Cache MISS - Fetching from Indexer API...');
+      res.setHeader('X-Cache', 'MISS');
+    } catch (cacheError) {
+      console.warn('⚠️ [TOP RISK ENTITIES] Redis cache check failed, continuing without cache');
+    }
+
+    const authString = `${INDEXER_USER}:${INDEXER_PASS}`;
+    const authEncoded = Buffer.from(authString).toString("base64");
+
+    // Build time filter - null means all time
+    let timeFilter = null;
+    if (from && to) {
+      timeFilter = {
+        range: {
+          "@timestamp": { gte: from, lte: to }
+        }
+      };
+    } else if (hours && parseInt(hours) > 0) {
+      // Only apply time filter if hours is provided and > 0
+      const hoursAgo = parseInt(hours);
+      const now = new Date();
+      const startTime = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
+      timeFilter = {
+        range: {
+          "@timestamp": { gte: startTime.toISOString(), lte: now.toISOString() }
+        }
+      };
+    }
+    // If no time filter, we query all time
+
+    // Build query filters - include high severity alerts (level >= 12)
+    // Wazuh severity levels: 0-3 (low), 4-7 (medium), 8-11 (high), 12-15 (critical)
+    const mustFilters = [
+      { range: { "rule.level": { gte: 12 } } }  // High/Critical alerts (level 12+)
+    ];
+
+    // Add time filter only if specified
+    if (timeFilter) {
+      mustFilters.push(timeFilter);
+    }
+
+    // Query for critical alerts (severity >= 15) with aggregations
+    // Using separate field aggregations instead of scripts for better reliability
+    const aggQuery = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustFilters
+        }
+      },
+      aggs: {
+        // Top hosts by critical alerts
+        top_hosts: {
+          terms: {
+            field: "agent.name",
+            size: 5,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            agent_id: {
+              terms: { field: "agent.id", size: 1 }
+            },
+            agent_ip: {
+              terms: { field: "agent.ip", size: 1 }
+            },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp"]
+              }
+            }
+          }
+        },
+        // Top users - aggregate from multiple user fields separately
+        users_srcuser: {
+          terms: {
+            field: "data.srcuser",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        users_dstuser: {
+          terms: {
+            field: "data.dstuser",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        users_target: {
+          terms: {
+            field: "data.win.eventdata.targetUserName",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        users_subject: {
+          terms: {
+            field: "data.win.eventdata.subjectUserName",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        // Top processes - aggregate from multiple process fields separately
+        processes_name: {
+          terms: {
+            field: "data.process.name",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        processes_win: {
+          terms: {
+            field: "data.win.eventdata.processName",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        },
+        processes_new: {
+          terms: {
+            field: "data.win.eventdata.newProcessName",
+            size: 10,
+            order: { "_count": "desc" }
+          },
+          aggs: {
+            host_count: { cardinality: { field: "agent.name" } },
+            latest_alert: {
+              top_hits: {
+                size: 1,
+                sort: [{ "@timestamp": { order: "desc" } }],
+                _source: ["rule.description", "@timestamp", "agent.name"]
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const aggResponse = await axiosInstance.post(
+      `${INDEXER_HOST}/wazuh-alerts-*/_search`,
+      aggQuery,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Basic ${authEncoded}`,
+        },
+      }
+    );
+
+    // Parse aggregation results
+    const hostsBuckets = aggResponse.data.aggregations?.top_hosts?.buckets || [];
+
+    // Merge user buckets from multiple fields
+    const userBucketSources = [
+      aggResponse.data.aggregations?.users_srcuser?.buckets || [],
+      aggResponse.data.aggregations?.users_dstuser?.buckets || [],
+      aggResponse.data.aggregations?.users_target?.buckets || [],
+      aggResponse.data.aggregations?.users_subject?.buckets || []
+    ];
+
+    // Merge and deduplicate users, combining counts for same user
+    const userMap = new Map();
+    for (const buckets of userBucketSources) {
+      for (const bucket of buckets) {
+        const key = bucket.key;
+        if (!key || key === '-' || key === 'N/A' || key === 'SYSTEM' || key === 'LOCAL SERVICE' || key === 'NETWORK SERVICE') continue;
+
+        if (userMap.has(key)) {
+          const existing = userMap.get(key);
+          existing.critical_count += bucket.doc_count;
+          existing.host_count = Math.max(existing.host_count, bucket.host_count?.value || 0);
+          // Keep the most recent alert
+          const newTimestamp = bucket.latest_alert?.hits?.hits?.[0]?._source?.['@timestamp'];
+          if (newTimestamp && (!existing.latest_timestamp || new Date(newTimestamp) > new Date(existing.latest_timestamp))) {
+            existing.latest_alert = bucket.latest_alert?.hits?.hits?.[0]?._source?.rule?.description || 'N/A';
+            existing.latest_host = bucket.latest_alert?.hits?.hits?.[0]?._source?.agent?.name || 'N/A';
+            existing.latest_timestamp = newTimestamp;
+          }
+        } else {
+          userMap.set(key, {
+            name: key,
+            critical_count: bucket.doc_count,
+            host_count: bucket.host_count?.value || 0,
+            latest_alert: bucket.latest_alert?.hits?.hits?.[0]?._source?.rule?.description || 'N/A',
+            latest_host: bucket.latest_alert?.hits?.hits?.[0]?._source?.agent?.name || 'N/A',
+            latest_timestamp: bucket.latest_alert?.hits?.hits?.[0]?._source?.['@timestamp'] || null
+          });
+        }
+      }
+    }
+
+    // Merge process buckets from multiple fields
+    const processBucketSources = [
+      aggResponse.data.aggregations?.processes_name?.buckets || [],
+      aggResponse.data.aggregations?.processes_win?.buckets || [],
+      aggResponse.data.aggregations?.processes_new?.buckets || []
+    ];
+
+    // Merge and deduplicate processes, combining counts for same process
+    const processMap = new Map();
+    for (const buckets of processBucketSources) {
+      for (const bucket of buckets) {
+        const key = bucket.key;
+        if (!key || key === '-' || key === 'N/A') continue;
+
+        // Normalize process name (take just filename for paths)
+        const normalizedKey = key.includes('\\') ? key.split('\\').pop() : key;
+
+        if (processMap.has(normalizedKey)) {
+          const existing = processMap.get(normalizedKey);
+          existing.critical_count += bucket.doc_count;
+          existing.host_count = Math.max(existing.host_count, bucket.host_count?.value || 0);
+          // Keep the most recent alert
+          const newTimestamp = bucket.latest_alert?.hits?.hits?.[0]?._source?.['@timestamp'];
+          if (newTimestamp && (!existing.latest_timestamp || new Date(newTimestamp) > new Date(existing.latest_timestamp))) {
+            existing.latest_alert = bucket.latest_alert?.hits?.hits?.[0]?._source?.rule?.description || 'N/A';
+            existing.latest_host = bucket.latest_alert?.hits?.hits?.[0]?._source?.agent?.name || 'N/A';
+            existing.latest_timestamp = newTimestamp;
+          }
+        } else {
+          processMap.set(normalizedKey, {
+            name: normalizedKey,
+            critical_count: bucket.doc_count,
+            host_count: bucket.host_count?.value || 0,
+            latest_alert: bucket.latest_alert?.hits?.hits?.[0]?._source?.rule?.description || 'N/A',
+            latest_host: bucket.latest_alert?.hits?.hits?.[0]?._source?.agent?.name || 'N/A',
+            latest_timestamp: bucket.latest_alert?.hits?.hits?.[0]?._source?.['@timestamp'] || null
+          });
+        }
+      }
+    }
+
+    const topHosts = hostsBuckets.map(bucket => ({
+      name: bucket.key,
+      agent_id: bucket.agent_id?.buckets?.[0]?.key || 'N/A',
+      agent_ip: bucket.agent_ip?.buckets?.[0]?.key || 'N/A',
+      critical_count: bucket.doc_count,
+      latest_alert: bucket.latest_alert?.hits?.hits?.[0]?._source?.rule?.description || 'N/A',
+      latest_timestamp: bucket.latest_alert?.hits?.hits?.[0]?._source?.['@timestamp'] || null
+    }));
+
+    // Sort users by critical_count and take top 5
+    const topUsers = Array.from(userMap.values())
+      .sort((a, b) => b.critical_count - a.critical_count)
+      .slice(0, 5);
+
+    // Sort processes by critical_count and take top 5
+    const topProcesses = Array.from(processMap.values())
+      .sort((a, b) => b.critical_count - a.critical_count)
+      .slice(0, 5);
+
+    const responseData = {
+      hosts: topHosts,
+      users: topUsers,
+      processes: topProcesses,
+      total_critical_alerts: aggResponse.data.hits?.total?.value || 0
+    };
+
+    // Set cache
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(responseData), {
+        EX: CACHE_TTL,
+        NX: true
+      });
+      console.log('💾 [TOP RISK ENTITIES] Data cached in Redis for 15 minutes');
+    } catch (cacheError) {
+      console.warn('⚠️ [TOP RISK ENTITIES] Redis cache set failed, continuing without cache');
+    }
+
+    return res.status(200).json(
+      new ApiResponse(200, responseData, "Top risk entities fetched successfully")
+    );
+  } catch (error) {
+    console.error("Top risk entities route error:", error.message);
+    throw new ApiError(500, error.message || "Failed to fetch top risk entities");
+  }
+});
+
 export {
   getAlerts,
   getAlertsCount,
@@ -1027,5 +1410,6 @@ export {
   getEventsCountByAgent,
   getLogsCountByAgent,
   getAgentEvents,
-  getAgentLogs
+  getAgentLogs,
+  getTopRiskEntities
 };
