@@ -84,10 +84,11 @@ export default function IocListPage() {
   const [filesError, setFilesError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
-  // ── New list modal ───────────────────────────────────────────────────────
-  const [showNewModal, setShowNewModal] = useState(false)
-  const [newFilename, setNewFilename] = useState('')
-  const [newFilenameError, setNewFilenameError] = useState('')
+  // ── Inline create form ───────────────────────────────────────────────────
+  const [showInlineCreate, setShowInlineCreate] = useState(false)
+  const [newListName, setNewListName] = useState('')
+  const [newListNameError, setNewListNameError] = useState('')
+  const [newEntries, setNewEntries] = useState<CdbEntry[]>([])
   const [creating, setCreating] = useState(false)
 
   // ── Delete confirm ───────────────────────────────────────────────────────
@@ -268,26 +269,45 @@ export default function IocListPage() {
     }
   }
 
-  // ── Create new list ───────────────────────────────────────────────────────
+  // ── Inline create helpers ────────────────────────────────────────────────
   const isValidFilename = (name: string) => /^[a-zA-Z0-9._-]+$/.test(name)
 
+  const cancelInlineCreate = () => {
+    setShowInlineCreate(false)
+    setNewListName('')
+    setNewListNameError('')
+    setNewEntries([])
+  }
+
+  const addNewEntry = () => {
+    setNewEntries(prev => [...prev, { key: '', value: '' }])
+  }
+
+  const updateNewEntry = (idx: number, field: 'key' | 'value', val: string) => {
+    setNewEntries(prev => prev.map((e, i) => i === idx ? { ...e, [field]: val } : e))
+  }
+
+  const removeNewEntry = (idx: number) => {
+    setNewEntries(prev => prev.filter((_, i) => i !== idx))
+  }
+
   const confirmCreate = async () => {
-    const name = newFilename.trim()
-    if (!name) { setNewFilenameError('Filename is required'); return }
+    const name = newListName.trim()
+    if (!name) { setNewListNameError('Name is required'); return }
     if (!isValidFilename(name)) {
-      setNewFilenameError('Only letters, numbers, dots, hyphens, and underscores are allowed (no spaces)')
+      setNewListNameError('Only letters, numbers, dots, hyphens, and underscores — no spaces')
       return
     }
     setCreating(true)
     try {
-      await iocListApi.saveListFile(name, '', orgId)
-      setShowNewModal(false)
-      setNewFilename('')
-      setNewFilenameError('')
+      const validEntries = newEntries.filter(e => e.key.trim())
+      const content = serializeCdb(validEntries)
+      await iocListApi.saveListFile(name, content, orgId)
+      cancelInlineCreate()
       showToast('success', `Created ${name}`)
       loadFiles()
     } catch (err: unknown) {
-      setNewFilenameError(err instanceof Error ? err.message : 'Failed to create')
+      setNewListNameError(err instanceof Error ? err.message : 'Failed to create')
     } finally {
       setCreating(false)
     }
@@ -555,15 +575,123 @@ export default function IocListPage() {
           >
             <ArrowPathIcon className={clsx('w-4 h-4', loadingFiles && 'animate-spin')} />
           </button>
-          <button
-            onClick={() => { setNewFilename(''); setNewFilenameError(''); setShowNewModal(true) }}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-sm"
-          >
-            <PlusIcon className="w-4 h-4" />
-            New IOC List
-          </button>
+          {!showInlineCreate && (
+            <button
+              onClick={() => { setShowInlineCreate(true); setNewListName(''); setNewListNameError(''); setNewEntries([]) }}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-sm"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add New
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Inline Create Form ──────────────────────────────────────────── */}
+      {showInlineCreate && (
+        <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10 overflow-hidden">
+          {/* Name row */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-blue-100 dark:border-blue-800/50 flex-wrap">
+            <div className="flex-1 min-w-48 space-y-1">
+              <input
+                autoFocus
+                type="text"
+                value={newListName}
+                onChange={e => { setNewListName(e.target.value); setNewListNameError('') }}
+                onKeyDown={e => e.key === 'Escape' && cancelInlineCreate()}
+                placeholder="New IOC List Name"
+                className={clsx(
+                  'w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 border',
+                  newListNameError
+                    ? 'border-red-400 focus:ring-red-400'
+                    : 'border-gray-300 dark:border-gray-600'
+                )}
+              />
+              {newListNameError && (
+                <p className="text-xs text-red-600 flex items-center gap-1">
+                  <ExclamationCircleIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                  {newListNameError}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={addNewEntry}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-blue-400 dark:border-blue-600 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+              >
+                <PlusIcon className="w-3.5 h-3.5" />
+                Add Entry
+              </button>
+              <button
+                onClick={confirmCreate}
+                disabled={creating}
+                className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-60"
+              >
+                {creating ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={cancelInlineCreate}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                title="Cancel"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Entry rows */}
+          {newEntries.length > 0 && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-blue-100/60 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800/50">
+                  <th className="text-left px-4 py-2 font-medium text-blue-700 dark:text-blue-400 w-2/5">Key</th>
+                  <th className="text-left px-4 py-2 font-medium text-blue-700 dark:text-blue-400">Value</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-blue-100 dark:divide-blue-800/40">
+                {newEntries.map((entry, idx) => (
+                  <tr key={idx}>
+                    <td className="px-4 py-2">
+                      <input
+                        type="text"
+                        value={entry.key}
+                        onChange={e => updateNewEntry(idx, 'key', e.target.value)}
+                        placeholder="Key"
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="text"
+                        value={entry.value}
+                        onChange={e => updateNewEntry(idx, 'value', e.target.value)}
+                        placeholder="Value (optional)"
+                        className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        onClick={() => removeNewEntry(idx)}
+                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Remove"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {newEntries.length === 0 && (
+            <p className="px-4 py-3 text-xs text-blue-500 dark:text-blue-400">
+              Click <span className="font-medium">Add Entry</span> to add key-value pairs, or save now to create an empty list.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative max-w-sm">
@@ -660,57 +788,6 @@ export default function IocListPage() {
           {filteredFiles.length} {filteredFiles.length === 1 ? 'list' : 'lists'}
           {search && ` matching "${search}"`}
         </p>
-      )}
-
-      {/* ── New IOC List Modal ──────────────────────────────────────────── */}
-      {showNewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">New IOC List</h2>
-              <button onClick={() => setShowNewModal(false)} className="text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Filename</label>
-              <input
-                type="text"
-                value={newFilename}
-                onChange={e => { setNewFilename(e.target.value); setNewFilenameError('') }}
-                onKeyDown={e => e.key === 'Enter' && confirmCreate()}
-                placeholder="e.g. malicious-ips"
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-              {newFilenameError ? (
-                <p className="text-xs text-red-600 flex items-center gap-1">
-                  <ExclamationCircleIcon className="w-3.5 h-3.5" />
-                  {newFilenameError}
-                </p>
-              ) : (
-                <p className="text-xs text-gray-400">
-                  Only letters, numbers, dots, hyphens, and underscores. No spaces.
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={() => setShowNewModal(false)}
-                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmCreate}
-                disabled={creating}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-60"
-              >
-                {creating ? 'Creating…' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ── Delete Confirm Modal ─────────────────────────────────────────── */}
