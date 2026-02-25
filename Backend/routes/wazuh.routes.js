@@ -12,6 +12,7 @@ import {
   getMitreCoverage,
   getMitreStatistics
 } from '../controllers/mitre.controller.js';
+import { getRules, getRuleFiles, getRuleGroups, getRuleFileContent, saveRuleFile, deleteRuleFile } from '../controllers/rules.controller.js';
 import { authenticateToken } from '../middlewares/auth.middleware.js';
 import { organisationScope } from '../middlewares/organisationScope.middleware.js';
 import { fetchClientCred } from '../middlewares/fetchClientCredentials.js';
@@ -55,6 +56,14 @@ router.get("/dashboard-metrics", getDashboardMetrics);
 // Compliance routes
 router.get("/compliance", getCompliance);
 router.get("/compliance/:framework", getComplianceFramework);
+
+// Rules routes (must be before any :param routes)
+router.get("/rules/files", getRuleFiles);                          // List rule XML files
+router.get("/rules/files/:filename/content", getRuleFileContent);  // Raw XML content of a file
+router.put("/rules/files/:filename", saveRuleFile);                // Create / overwrite a custom rule file
+router.delete("/rules/files/:filename", deleteRuleFile);           // Delete a custom rule file
+router.get("/rules/groups", getRuleGroups);                        // List rule groups
+router.get("/rules", getRules);                                    // List rules with filters
 
 // MITRE ATT&CK routes
 router.get("/mitre/groups", getMitreGroups);

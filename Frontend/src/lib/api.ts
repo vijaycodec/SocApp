@@ -55,7 +55,7 @@ const apiRequest = async (url: string, options: RequestInit = {}) => {
     // When session expires or is invalid, clear auth and redirect to login
     if (response.status === 401) {
       console.log('🔒 [SESSION EXPIRED] 401 Unauthorized - Session expired or invalid');
-      await clearAuthSession();
+      clearAuthSession();
       if (typeof window !== 'undefined') {
         console.log('🔄 [SESSION EXPIRED] Redirecting to login page...');
         window.location.href = '/login';
@@ -461,6 +461,62 @@ export const wazuhApi = {
     if (hours) params.append('hours', hours.toString());
     if (params.toString()) url += `?${params.toString()}`;
     return apiRequest(url);
+  },
+
+  getRules: (options?: { rule_ids?: string; level?: number; group?: string; filename?: string; status?: string; search?: string; offset?: number; limit?: number; orgId?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.orgId)    params.append('orgId', options.orgId);
+    if (options?.rule_ids) params.append('rule_ids', options.rule_ids);
+    if (options?.level !== undefined) params.append('level', options.level.toString());
+    if (options?.group)    params.append('group', options.group);
+    if (options?.filename) params.append('filename', options.filename);
+    if (options?.status)   params.append('status', options.status);
+    if (options?.search)   params.append('search', options.search);
+    if (options?.offset !== undefined) params.append('offset', options.offset.toString());
+    if (options?.limit !== undefined)  params.append('limit', options.limit.toString());
+    const url = `${WAZUH_BASE_URL}/rules${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  getRuleGroups: (options?: { orgId?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.orgId)  params.append('orgId', options.orgId);
+    if (options?.search) params.append('search', options.search);
+    const url = `${WAZUH_BASE_URL}/rules/groups${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  getRuleFiles: (options?: { orgId?: string; search?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.orgId)  params.append('orgId', options.orgId);
+    if (options?.search) params.append('search', options.search);
+    if (options?.status) params.append('status', options.status);
+    const url = `${WAZUH_BASE_URL}/rules/files${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  getRuleFileContent: (filename: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/rules/files/${encodeURIComponent(filename)}/content${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  saveRuleFile: (filename: string, xmlContent: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/rules/files/${encodeURIComponent(filename)}${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url, {
+      method: 'PUT',
+      body: JSON.stringify({ content: xmlContent }),
+    });
+  },
+
+  deleteRuleFile: (filename: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/rules/files/${encodeURIComponent(filename)}${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url, { method: 'DELETE' });
   },
 };
 

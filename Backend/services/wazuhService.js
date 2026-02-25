@@ -503,3 +503,264 @@ export const refreshCacheService = async (cacheKey) => {
   // No-op since caching is disabled
   return { cleared: 0, message: "Caching disabled - no cache to clear" };
 };
+
+/**
+ * Get Wazuh rules from the Wazuh Manager API
+ * Endpoint: GET {host}/rules
+ * Supports filtering by rule_ids, level, group, filename, status, search, offset, limit
+ */
+export const getRulesService = async (wazuhCredentials, params = {}) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Build query params — only include defined values
+    const query = new URLSearchParams();
+    if (params.rule_ids)  query.set('rule_ids', params.rule_ids);
+    if (params.level !== undefined) query.set('level', params.level);
+    if (params.group)     query.set('group', params.group);
+    if (params.filename)  query.set('filename', params.filename);
+    if (params.status)    query.set('status', params.status);
+    if (params.search)    query.set('search', params.search);
+    if (params.offset !== undefined) query.set('offset', params.offset);
+    if (params.limit !== undefined)  query.set('limit', params.limit);
+
+    const url = `${host}/rules${query.toString() ? `?${query.toString()}` : ''}`;
+    console.log(`[i] Fetching Wazuh rules: ${url}`);
+
+    const response = await axiosInstance.get(url, { headers });
+    const { data } = response;
+
+    if (data.error !== 0) {
+      throw new Error(`Wazuh rules API error: ${data.message || 'Unknown error'}`);
+    }
+
+    console.log(`[✓] Rules fetched: ${data.data?.total_affected_items ?? 0} total`);
+    return data.data;
+  }, 'Wazuh getRules');
+};
+
+/**
+ * Get Wazuh rule files (list of rule XML files on the manager)
+ * Endpoint: GET {host}/rules/files
+ */
+export const getRuleFilesService = async (wazuhCredentials, params = {}) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const query = new URLSearchParams();
+    if (params.offset !== undefined) query.set('offset', params.offset);
+    if (params.limit !== undefined)  query.set('limit', params.limit);
+    if (params.search)   query.set('search', params.search);
+    if (params.status)   query.set('status', params.status);
+    if (params.filename) query.set('filename', params.filename);
+
+    const url = `${host}/rules/files${query.toString() ? `?${query.toString()}` : ''}`;
+    console.log(`[i] Fetching Wazuh rule files: ${url}`);
+
+    const response = await axiosInstance.get(url, { headers });
+    const { data } = response;
+
+    if (data.error !== 0) {
+      throw new Error(`Wazuh rules/files API error: ${data.message || 'Unknown error'}`);
+    }
+
+    console.log(`[✓] Rule files fetched: ${data.data?.total_affected_items ?? 0} total`);
+    return data.data;
+  }, 'Wazuh getRuleFiles');
+};
+
+/**
+ * Get Wazuh rule groups
+ * Endpoint: GET {host}/rules/groups
+ */
+export const getRuleGroupsService = async (wazuhCredentials, params = {}) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const query = new URLSearchParams();
+    if (params.offset !== undefined) query.set('offset', params.offset);
+    if (params.limit !== undefined)  query.set('limit', params.limit);
+    if (params.search)  query.set('search', params.search);
+
+    const url = `${host}/rules/groups${query.toString() ? `?${query.toString()}` : ''}`;
+    console.log(`[i] Fetching Wazuh rule groups: ${url}`);
+
+    const response = await axiosInstance.get(url, { headers });
+    const { data } = response;
+
+    if (data.error !== 0) {
+      throw new Error(`Wazuh rules/groups API error: ${data.message || 'Unknown error'}`);
+    }
+
+    console.log(`[✓] Rule groups fetched: ${data.data?.total_affected_items ?? 0} total`);
+    return data.data;
+  }, 'Wazuh getRuleGroups');
+};
+
+/**
+ * Recursively converts a Wazuh JSON-object representation of XML back to an XML string.
+ * Convention used by Wazuh:
+ *   - Keys starting with "@" are XML attributes  (e.g. "@id" → id="…")
+ *   - Key "#text" is the element's text content
+ *   - All other keys are child elements (arrays → repeated siblings)
+ */
+function jsonObjToXml(obj, indent = '') {
+  let result = '';
+
+  for (const [key, rawValue] of Object.entries(obj)) {
+    // Skip attribute and text-content markers — they're handled by the parent loop
+    if (key.startsWith('@') || key === '#text') continue;
+
+    const items = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+    for (const item of items) {
+      if (typeof item === 'object' && item !== null) {
+        // Collect attributes
+        const attrStr = Object.entries(item)
+          .filter(([k]) => k.startsWith('@'))
+          .map(([k, v]) => ` ${k.slice(1)}="${v}"`)
+          .join('');
+
+        const textContent = item['#text'] !== undefined ? String(item['#text']) : null;
+        const childKeys = Object.keys(item).filter(k => !k.startsWith('@') && k !== '#text');
+
+        if (childKeys.length === 0 && textContent === null) {
+          // Self-closing tag
+          result += `${indent}<${key}${attrStr}/>\n`;
+        } else if (childKeys.length === 0) {
+          // Simple element with text content
+          result += `${indent}<${key}${attrStr}>${textContent}</${key}>\n`;
+        } else {
+          // Element with child elements (and optional inline text)
+          result += `${indent}<${key}${attrStr}>\n`;
+          if (textContent !== null) {
+            result += `${indent}  ${textContent}\n`;
+          }
+          const childObj = Object.fromEntries(
+            Object.entries(item).filter(([k]) => !k.startsWith('@') && k !== '#text')
+          );
+          result += jsonObjToXml(childObj, indent + '  ');
+          result += `${indent}</${key}>\n`;
+        }
+      } else {
+        // Primitive value → simple element
+        result += `${indent}<${key}>${item}</${key}>\n`;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Get the raw XML content of a specific rule file
+ * Endpoint: GET {host}/rules/files/{filename}
+ * Wazuh returns a JSON envelope; affected_items[0] is the XML parsed as a JSON object.
+ * We convert it back to a formatted XML string.
+ */
+export const getRuleFileContentService = async (wazuhCredentials, filename) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const url = `${host}/rules/files/${encodeURIComponent(filename)}`;
+    console.log(`[i] Fetching Wazuh rule file content: ${url}`);
+
+    const response = await axiosInstance.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = response.data;
+
+    if (data?.error !== 0) {
+      throw new Error(`Wazuh rules/files API error: ${data?.message || 'Unknown error'}`);
+    }
+
+    const xmlObj = data?.data?.affected_items?.[0];
+    if (!xmlObj) {
+      throw new Error(`No content returned for rule file: ${filename}`);
+    }
+
+    // Convert the JSON object representation back to a formatted XML string
+    const xmlString = jsonObjToXml(xmlObj, '');
+
+    console.log(`[✓] Rule file content fetched and converted to XML: ${filename}`);
+    return xmlString;
+  }, `Wazuh getRuleFileContent(${filename})`);
+};
+
+/**
+ * Create or overwrite a custom rule file on the Wazuh manager
+ * Endpoint: PUT {host}/rules/files/{filename}
+ * Body: raw XML string (saved to /var/ossec/etc/rules/{filename})
+ */
+export const saveRuleFileService = async (wazuhCredentials, filename, xmlContent) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    // overwrite=true is required by Wazuh when the file already exists.
+    // Passing it unconditionally is safe — it is simply ignored for new files.
+    const url = `${host}/rules/files/${encodeURIComponent(filename)}?overwrite=true`;
+    console.log(`[i] Saving Wazuh rule file: ${url}`);
+
+    const response = await axiosInstance.put(url, xmlContent, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+
+    const { data } = response;
+
+    if (data.error !== 0) {
+      // Include detailed_error when available so the caller sees the exact XML parse issue
+      const detail = data.data?.detail || data.data?.failed_items?.[0]?.error?.message || '';
+      throw new Error(
+        `Wazuh rules/files PUT error: ${data.message || 'Unknown error'}${detail ? ` — ${detail}` : ''}`
+      );
+    }
+
+    console.log(`[✓] Rule file saved: ${filename}`);
+    return data.data;
+  }, `Wazuh saveRuleFile(${filename})`);
+};
+
+/**
+ * Delete a custom rule file from the Wazuh manager
+ * Endpoint: DELETE {host}/rules/files/{filename}
+ */
+export const deleteRuleFileService = async (wazuhCredentials, filename) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const url = `${host}/rules/files/${encodeURIComponent(filename)}`;
+    console.log(`[i] Deleting Wazuh rule file: ${url}`);
+
+    const response = await axiosInstance.delete(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const { data } = response;
+
+    if (data.error !== 0) {
+      throw new Error(`Wazuh rules/files DELETE error: ${data.message || 'Unknown error'}`);
+    }
+
+    console.log(`[✓] Rule file deleted: ${filename}`);
+    return data.data;
+  }, `Wazuh deleteRuleFile(${filename})`);
+};

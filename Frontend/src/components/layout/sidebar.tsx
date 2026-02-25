@@ -17,7 +17,9 @@ import {
   ServerIcon,
   BookOpenIcon,
   ChartBarSquareIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  AdjustmentsHorizontalIcon,
+  FireIcon
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { SystemStatus } from './system-status'
@@ -53,6 +55,8 @@ export function Sidebar() {
       { name: 'Agents Overview', href: '/agents', icon: UsersIcon, badge: null, requiredPermission: 'agents:read' },
       { name: 'Events By Agent', href: '/events-by-agent', icon: ChartBarSquareIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'Logs (Archives)', href: '/logs-by-agent', icon: DocumentTextIcon, badge: null, requiredPermission: 'alerts:read' },
+      { name: 'Rules', href: '/rules', icon: AdjustmentsHorizontalIcon, badge: null, requiredPermission: 'alerts:read' },
+      { name: 'Risk Score', href: '/risk-score', icon: FireIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'SIEM Portal', href: '/siem', icon: CpuChipIcon, badge: null, requiredPermission: 'siem:access' },
     ]
   }

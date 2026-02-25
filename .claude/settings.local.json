@@ -3,7 +3,10 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "WebFetch(domain:documentation.wazuh.com)",
+      "WebFetch(domain:blusapphire.ai)",
+      "WebFetch(domain:docs.blusapphire.io)"
     ]
   }
 }
