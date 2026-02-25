@@ -534,21 +534,11 @@ function NewRuleFileEditor({
     const csv = [
       '# Custom rules CSV import template',
       '# Columns: id, level, group, description, match, regex, if_sid, mitre_id, mitre_tactic',
-      '# Rules ID must be >= 100000',
+      '# Rules IDs must be >= 100000',
       '# Levels: 0=Ignored  3=Low  5=Medium  8=High  12=Critical  15=Severe',
       '# Leave a column blank if not needed',
+      '',
       'id,level,group,description,match,regex,if_sid,mitre_id,mitre_tactic',
-      '100200,5,authentication,SSH failed password attempt,Failed password for,,5716,T1110,Credential Access',
-      '100201,10,authentication,SSH brute force detected - multiple failures,,,100200,T1110,Credential Access',
-      '100202,8,privilege_escalation,Sudo privilege escalation by non-admin,sudo:,,5400,T1548,Privilege Escalation',
-      '100203,5,file_integrity,Sensitive file modified in /etc,,,550,T1565,Impact',
-      '100204,12,web_attack,SQL injection pattern detected in web log,,select.*from.*where,,T1190,Initial Access',
-      '100205,10,web_attack,XSS attempt detected in HTTP request,,"<script>.*</script>",,T1059,Execution',
-      '100206,8,network,Port scan detected from single source,,,533,T1046,Discovery',
-      '100207,5,authentication,Failed login to management console,authentication failure,,31100,T1078,Defense Evasion',
-      '100208,10,malware,Suspicious process execution from temp directory,,/tmp/[a-zA-Z0-9]+\\s,,T1059,Execution',
-      '100209,12,data_exfiltration,Large outbound data transfer detected,,,,,',
-      '100210,8,persistence,New cron job created by non-root user,crontab -,,,,',
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url  = URL.createObjectURL(blob)
