@@ -530,6 +530,35 @@ function NewRuleFileEditor({
     }
   }
 
+  const handleDownloadTemplate = () => {
+    const csv = [
+      '# Custom rules CSV import template',
+      '# Columns: id, level, group, description, match, regex, if_sid, mitre_id, mitre_tactic',
+      '# Rules ID must be >= 100000',
+      '# Levels: 0=Ignored  3=Low  5=Medium  8=High  12=Critical  15=Severe',
+      '# Leave a column blank if not needed',
+      'id,level,group,description,match,regex,if_sid,mitre_id,mitre_tactic',
+      '100200,5,authentication,SSH failed password attempt,Failed password for,,5716,T1110,Credential Access',
+      '100201,10,authentication,SSH brute force detected - multiple failures,,,100200,T1110,Credential Access',
+      '100202,8,privilege_escalation,Sudo privilege escalation by non-admin,sudo:,,5400,T1548,Privilege Escalation',
+      '100203,5,file_integrity,Sensitive file modified in /etc,,,550,T1565,Impact',
+      '100204,12,web_attack,SQL injection pattern detected in web log,,select.*from.*where,,T1190,Initial Access',
+      '100205,10,web_attack,XSS attempt detected in HTTP request,,"<script>.*</script>",,T1059,Execution',
+      '100206,8,network,Port scan detected from single source,,,533,T1046,Discovery',
+      '100207,5,authentication,Failed login to management console,authentication failure,,31100,T1078,Defense Evasion',
+      '100208,10,malware,Suspicious process execution from temp directory,,/tmp/[a-zA-Z0-9]+\\s,,T1059,Execution',
+      '100209,12,data_exfiltration,Large outbound data transfer detected,,,,,',
+      '100210,8,persistence,New cron job created by non-root user,crontab -,,,,',
+    ].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = 'custom_rules_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-6">
 
@@ -552,6 +581,13 @@ function NewRuleFileEditor({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium border border-gray-200 dark:border-gray-700 transition-colors"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            CSV Template
+          </button>
           <button
             onClick={() => importRef.current?.click()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium border border-gray-200 dark:border-gray-700 transition-colors"
@@ -778,7 +814,11 @@ function ManageRulesView({
   const [viewFile, setViewFile] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [toast, setToast]       = useState<{ ok: boolean; msg: string } | null>(null)
-  const importRef               = useRef<HTMLInputElement>(null)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [isDragging, setIsDragging]    = useState(false)
+  const [uploading, setUploading]      = useState(false)
+  const importRef                      = useRef<HTMLInputElement>(null)
+  const isValidFilename = (name: string) => /^[a-zA-Z0-9._-]+$/.test(name)
 
   const fetchFiles = useCallback(async () => {
     setLoading(true)
@@ -811,27 +851,174 @@ function ManageRulesView({
     }
   }
 
-  // Read the selected XML or CSV file and hand it to the parent to open in the editor
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const isCsv = file.name.toLowerCase().endsWith('.csv')
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const raw = ev.target?.result as string ?? ''
-      if (isCsv) {
-        const xmlName = file.name.replace(/\.csv$/i, '.xml')
-        onImportFile(xmlName, csvToXml(raw))
-      } else {
-        onImportFile(file.name, raw)
-      }
-    }
-    reader.readAsText(file)
+  // Stage files from the file picker for preview
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? [])
     e.target.value = ''
+    if (picked.length === 0) return
+    setPendingFiles(prev => [...prev, ...picked.filter(f => !prev.some(p => p.name === f.name))])
   }
 
+  // Stage files dropped onto the view
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.xml'))
+    if (dropped.length === 0) return
+    setPendingFiles(prev => [...prev, ...dropped.filter(f => !prev.some(p => p.name === f.name))])
+  }
+
+  // Upload all valid staged files to the manager
+  const handleUpload = async () => {
+    const validFiles = pendingFiles.filter(f => isValidFilename(f.name))
+    if (validFiles.length === 0) return
+    setUploading(true)
+    const results = await Promise.allSettled(
+      validFiles.map(file =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = async ev => {
+            const raw = ev.target?.result as string ?? ''
+            try {
+              await wazuhApi.saveRuleFile(file.name, raw, orgId)
+              resolve(file.name)
+            } catch (err) {
+              reject(new Error(`${file.name}: ${err instanceof Error ? err.message : 'Failed'}`))
+            }
+          }
+          reader.onerror = () => reject(new Error(`${file.name}: Failed to read`))
+          reader.readAsText(file)
+        })
+      )
+    )
+    setUploading(false)
+    setPendingFiles([])
+    const succeeded = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
+    if (failed.length === 0) {
+      setToast({ ok: true, msg: `${succeeded} file${succeeded !== 1 ? 's' : ''} imported successfully.` })
+    } else {
+      const failMessages = failed.map(r => r.reason?.message ?? 'Unknown error').join('; ')
+      setToast({ ok: false, msg: `${succeeded} succeeded, ${failed.length} failed: ${failMessages}` })
+    }
+    await fetchFiles()
+  }
+
+  const validPendingCount = pendingFiles.filter(f => isValidFilename(f.name)).length
+
   return (
-    <div className="space-y-6">
+    <div
+      className="relative space-y-6"
+      onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false) }}
+      onDrop={handleDrop}
+    >
+      {/* ── Drag-over overlay ── */}
+      {isDragging && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 pointer-events-none">
+          <ArrowUpTrayIcon className="w-12 h-12 text-blue-400 mb-3" />
+          <p className="text-lg font-semibold text-blue-400">Drop XML files here</p>
+        </div>
+      )}
+
+      {/* ── File preview / staging modal ── */}
+      {pendingFiles.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => { if (!uploading) setPendingFiles([]) }}
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-gray-700 bg-gray-950 shadow-2xl overflow-hidden">
+
+            {/* header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-700 bg-gray-900">
+              <div className="flex items-center gap-2">
+                <ArrowUpTrayIcon className="w-5 h-5 text-blue-400" />
+                <span className="font-semibold text-white">
+                  {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} staged
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => importRef.current?.click()}
+                  disabled={uploading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors disabled:opacity-40"
+                >
+                  <PlusIcon className="w-3.5 h-3.5" />
+                  Add more
+                </button>
+                <button
+                  onClick={() => { if (!uploading) setPendingFiles([]) }}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* file list */}
+            <div className="divide-y divide-gray-800/60 max-h-72 overflow-y-auto">
+              {pendingFiles.map((file, i) => {
+                const valid = isValidFilename(file.name)
+                return (
+                  <div key={i} className="flex items-center gap-3 px-5 py-3">
+                    <DocumentTextIcon className={clsx('w-5 h-5 shrink-0', valid ? 'text-blue-400' : 'text-red-400')} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-sm text-gray-200 truncate">{file.name}</p>
+                      {!valid && (
+                        <p className="text-xs text-red-400 mt-0.5">Invalid — spaces / special chars not allowed</p>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 shrink-0">{(file.size / 1024).toFixed(1)} KB</span>
+                    {valid
+                      ? <CheckCircleIcon className="w-4 h-4 text-green-400 shrink-0" />
+                      : <ExclamationCircleIcon className="w-4 h-4 text-red-400 shrink-0" />}
+                    <button
+                      onClick={() => setPendingFiles(pf => pf.filter((_, j) => j !== i))}
+                      disabled={uploading}
+                      className="p-1 rounded text-gray-500 hover:text-red-400 transition-colors disabled:opacity-40"
+                    >
+                      <XMarkIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* footer */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-gray-800 bg-gray-900">
+              <div className="text-xs">
+                <span className="text-green-400 font-medium">{validPendingCount} valid</span>
+                {pendingFiles.length - validPendingCount > 0 && (
+                  <span className="text-red-400 font-medium ml-2">
+                    {pendingFiles.length - validPendingCount} invalid
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPendingFiles([])}
+                  disabled={uploading}
+                  className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white border border-gray-700 hover:border-gray-600 transition-colors disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpload}
+                  disabled={uploading || validPendingCount === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors"
+                >
+                  {uploading
+                    ? <><ArrowPathIcon className="w-4 h-4 animate-spin" />Uploading…</>
+                    : `Upload ${validPendingCount} file${validPendingCount !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* XML viewer stays as modal (view-only popup is fine) */}
       {viewFile && (
         <XmlViewerModal filename={viewFile} orgId={orgId} onClose={() => setViewFile(null)} />
@@ -874,7 +1061,7 @@ function ManageRulesView({
             <ArrowUpTrayIcon className="w-4 h-4" />
             Import files
           </button>
-          <input ref={importRef} type="file" accept=".xml,.csv" className="hidden" onChange={handleImport} />
+          <input ref={importRef} type="file" accept=".xml" multiple className="hidden" onChange={handleInputChange} />
           <button
             onClick={onBack}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium border border-gray-200 dark:border-gray-700 transition-colors"
