@@ -13,6 +13,7 @@ import {
   getMitreStatistics
 } from '../controllers/mitre.controller.js';
 import { getRules, getRuleFiles, getRuleGroups, getRuleFileContent, saveRuleFile, deleteRuleFile } from '../controllers/rules.controller.js';
+import { getCdbListFiles, getCdbListFileContent, saveCdbListFile, deleteCdbListFile } from '../controllers/iocList.controller.js';
 import { authenticateToken } from '../middlewares/auth.middleware.js';
 import { organisationScope } from '../middlewares/organisationScope.middleware.js';
 import { fetchClientCred } from '../middlewares/fetchClientCredentials.js';
@@ -64,6 +65,12 @@ router.put("/rules/files/:filename", saveRuleFile);                // Create / o
 router.delete("/rules/files/:filename", deleteRuleFile);           // Delete a custom rule file
 router.get("/rules/groups", getRuleGroups);                        // List rule groups
 router.get("/rules", getRules);                                    // List rules with filters
+
+// CDB List (IOC List) routes
+router.get("/lists/files", getCdbListFiles);                           // List CDB list files
+router.get("/lists/files/:filename/content", getCdbListFileContent);   // Get raw content of a CDB list file
+router.put("/lists/files/:filename", saveCdbListFile);                 // Create / overwrite a CDB list file
+router.delete("/lists/files/:filename", deleteCdbListFile);            // Delete a CDB list file
 
 // MITRE ATT&CK routes
 router.get("/mitre/groups", getMitreGroups);

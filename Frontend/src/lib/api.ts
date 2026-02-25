@@ -520,6 +520,44 @@ export const wazuhApi = {
   },
 };
 
+// IOC List (Wazuh CDB Lists) API calls
+export const iocListApi = {
+  getListFiles: (options?: { orgId?: string; search?: string; filename?: string; offset?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.orgId)    params.append('orgId', options.orgId);
+    if (options?.search)   params.append('search', options.search);
+    if (options?.filename) params.append('filename', options.filename);
+    if (options?.offset !== undefined) params.append('offset', options.offset.toString());
+    if (options?.limit !== undefined)  params.append('limit', options.limit.toString());
+    const url = `${WAZUH_BASE_URL}/lists/files${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  getListFileContent: (filename: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/lists/files/${encodeURIComponent(filename)}/content${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url);
+  },
+
+  saveListFile: (filename: string, content: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/lists/files/${encodeURIComponent(filename)}${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  deleteListFile: (filename: string, orgId?: string) => {
+    const params = new URLSearchParams();
+    if (orgId) params.append('orgId', orgId);
+    const url = `${WAZUH_BASE_URL}/lists/files/${encodeURIComponent(filename)}${params.toString() ? `?${params.toString()}` : ''}`;
+    return apiRequest(url, { method: 'DELETE' });
+  },
+};
+
 
 // Tickets API calls (updated for new backend structure)
 export const ticketsApi = {

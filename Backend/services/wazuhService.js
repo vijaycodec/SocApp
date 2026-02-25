@@ -764,3 +764,141 @@ export const deleteRuleFileService = async (wazuhCredentials, filename) => {
     return data.data;
   }, `Wazuh deleteRuleFile(${filename})`);
 };
+
+// ─────────────────────────── CDB LIST (IOC List) ────────────────────────────
+
+/**
+ * Get CDB list files metadata
+ * Endpoint: GET {host}/lists/files
+ */
+export const getCdbListFilesService = async (wazuhCredentials, { offset = 0, limit = 500, search, filename } = {}) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const params = new URLSearchParams();
+    params.append('offset', String(offset));
+    params.append('limit', String(limit));
+    if (search) params.append('search', search);
+    if (filename) params.append('filename', filename);
+
+    const url = `${host}/lists/files?${params.toString()}`;
+    console.log(`[i] Fetching Wazuh CDB list files: ${url}`);
+
+    const response = await axiosInstance.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = response.data;
+    if (data?.error !== 0) {
+      throw new Error(`Wazuh lists/files API error: ${data?.message || 'Unknown error'}`);
+    }
+
+    console.log('[✓] CDB list files fetched');
+    return data.data;
+  }, 'Wazuh getCdbListFiles');
+};
+
+/**
+ * Get raw content of a CDB list file
+ * Endpoint: GET {host}/lists/files/{filename}
+ * Wazuh returns the raw key:value text in affected_items[0]
+ */
+export const getCdbListFileContentService = async (wazuhCredentials, filename) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const url = `${host}/lists/files/${encodeURIComponent(filename)}`;
+    console.log(`[i] Fetching Wazuh CDB list content: ${url}`);
+
+    const response = await axiosInstance.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = response.data;
+    if (data?.error !== 0) {
+      throw new Error(`Wazuh lists/files content API error: ${data?.message || 'Unknown error'}`);
+    }
+
+    const content = data?.data?.affected_items?.[0];
+    console.log(`[✓] CDB list content fetched: ${filename}`);
+
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    // Wazuh returns the list as a JSON object { key: value, ... }
+    // Convert it back to CDB plain-text format (one "key:value" per line)
+    if (content && typeof content === 'object') {
+      return Object.entries(content)
+        .map(([k, v]) => (v ? `${k}:${v}` : `${k}:`))
+        .join('\n');
+    }
+
+    return '';
+  }, `Wazuh getCdbListFileContent(${filename})`);
+};
+
+/**
+ * Create or overwrite a CDB list file
+ * Endpoint: PUT {host}/lists/files/{filename}
+ * Body: raw key:value text (one entry per line)
+ */
+export const saveCdbListFileService = async (wazuhCredentials, filename, content) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const url = `${host}/lists/files/${encodeURIComponent(filename)}?overwrite=true`;
+    console.log(`[i] Saving Wazuh CDB list file: ${url}`);
+
+    const response = await axiosInstance.put(url, content, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+
+    const { data } = response;
+    if (data.error !== 0) {
+      const detail = data.data?.detail || data.data?.failed_items?.[0]?.error?.message || '';
+      throw new Error(
+        `Wazuh lists/files PUT error: ${data.message || 'Unknown error'}${detail ? ` — ${detail}` : ''}`
+      );
+    }
+
+    console.log(`[✓] CDB list file saved: ${filename}`);
+    return data.data;
+  }, `Wazuh saveCdbListFile(${filename})`);
+};
+
+/**
+ * Delete a CDB list file
+ * Endpoint: DELETE {host}/lists/files/{filename}
+ */
+export const deleteCdbListFileService = async (wazuhCredentials, filename) => {
+  const { host } = wazuhCredentials;
+
+  return await withRetry(async () => {
+    const token = await getWazuhToken(wazuhCredentials);
+
+    const url = `${host}/lists/files/${encodeURIComponent(filename)}`;
+    console.log(`[i] Deleting Wazuh CDB list file: ${url}`);
+
+    const response = await axiosInstance.delete(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const { data } = response;
+    if (data.error !== 0) {
+      throw new Error(`Wazuh lists/files DELETE error: ${data.message || 'Unknown error'}`);
+    }
+
+    console.log(`[✓] CDB list file deleted: ${filename}`);
+    return data.data;
+  }, `Wazuh deleteCdbListFile(${filename})`);
+};
