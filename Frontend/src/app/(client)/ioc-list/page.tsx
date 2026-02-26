@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useClient } from '@/contexts/ClientContext'
 import { iocListApi } from '@/lib/api'
 import {
@@ -16,6 +16,7 @@ import {
   ExclamationCircleIcon,
   CheckCircleIcon,
   DocumentTextIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 
@@ -91,6 +92,12 @@ export default function IocListPage() {
   const [newEntries, setNewEntries] = useState<CdbEntry[]>([])
   const [creating, setCreating] = useState(false)
 
+  // ── CSV Import ───────────────────────────────────────────────────────────
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResults, setImportResults] = useState<{ name: string; status: 'success' | 'error'; message?: string }[]>([])
+  const [showImportResults, setShowImportResults] = useState(false)
+
   // ── Delete confirm ───────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<CdbListFile | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -113,6 +120,10 @@ export default function IocListPage() {
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
   const [addRowError, setAddRowError] = useState('')
+
+  // Single-file CSV append import (edit view)
+  const appendInputRef = useRef<HTMLInputElement>(null)
+  const [appending, setAppending] = useState(false)
 
   // ── Toast helper ─────────────────────────────────────────────────────────
   const showToast = (type: 'success' | 'error', message: string) => {
@@ -269,6 +280,86 @@ export default function IocListPage() {
     }
   }
 
+  // ── CSV Import ────────────────────────────────────────────────────────────
+  const parseCsvToEntries = (csvText: string): CdbEntry[] => {
+    const lines = csvText.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length === 0) return []
+    // Skip header row if it looks like "key,value" or "Key,Value"
+    const firstLower = lines[0].toLowerCase().replace(/\s/g, '')
+    const startIdx = firstLower === 'key,value' || firstLower === 'keys,values' ? 1 : 0
+    return lines.slice(startIdx).map(line => {
+      const commaIdx = line.indexOf(',')
+      if (commaIdx === -1) return { key: line.trim(), value: '' }
+      return {
+        key: line.substring(0, commaIdx).trim(),
+        value: line.substring(commaIdx + 1).trim(),
+      }
+    }).filter(e => e.key.length > 0)
+  }
+
+  const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+    // Reset input so same files can be re-selected
+    e.target.value = ''
+
+    setImporting(true)
+    const results: { name: string; status: 'success' | 'error'; message?: string }[] = []
+
+    for (const file of files) {
+      const listName = file.name.replace(/\.csv$/i, '')
+      if (!isValidFilename(listName)) {
+        results.push({ name: file.name, status: 'error', message: 'Invalid filename — only letters, numbers, dots, hyphens, underscores allowed' })
+        continue
+      }
+      try {
+        const text = await file.text()
+        const entries = parseCsvToEntries(text)
+        const content = serializeCdb(entries)
+        await iocListApi.saveListFile(listName, content, orgId)
+        results.push({ name: listName, status: 'success', message: `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}` })
+      } catch (err: unknown) {
+        results.push({ name: listName, status: 'error', message: err instanceof Error ? err.message : 'Upload failed' })
+      }
+    }
+
+    setImporting(false)
+    setImportResults(results)
+    setShowImportResults(true)
+    if (results.some(r => r.status === 'success')) loadFiles()
+  }
+
+  // ── Append CSV to current edit file ──────────────────────────────────────
+  const handleAppendCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !editingFile) return
+
+    setAppending(true)
+    try {
+      const text = await file.text()
+      const incoming = parseCsvToEntries(text)
+      if (incoming.length === 0) {
+        showToast('error', 'CSV file is empty or has no valid rows')
+        return
+      }
+      // Merge: keep existing, append only keys not already present
+      const existingKeys = new Set(entries.map(e => e.key))
+      const newRows = incoming.filter(e => !existingKeys.has(e.key))
+      const skipped = incoming.length - newRows.length
+      const merged = [...entries, ...newRows]
+      await saveFile(merged)
+      const msg = skipped > 0
+        ? `Appended ${newRows.length} entries (${skipped} duplicate${skipped > 1 ? 's' : ''} skipped)`
+        : `Appended ${newRows.length} entries`
+      showToast('success', msg)
+    } catch (err: unknown) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to import CSV')
+    } finally {
+      setAppending(false)
+    }
+  }
+
   // ── Inline create helpers ────────────────────────────────────────────────
   const isValidFilename = (name: string) => /^[a-zA-Z0-9._-]+$/.test(name)
 
@@ -355,6 +446,23 @@ export default function IocListPage() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            {/* Hidden single-file input for append import */}
+            <input
+              ref={appendInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleAppendCsv}
+            />
+            <button
+              onClick={() => appendInputRef.current?.click()}
+              disabled={appending || saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
+              title="Import a CSV file and append entries to this list"
+            >
+              <ArrowUpTrayIcon className={clsx('w-4 h-4', appending && 'animate-pulse')} />
+              {appending ? 'Appending…' : 'Import CSV'}
+            </button>
             <button
               onClick={exportCurrentCsv}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
@@ -575,6 +683,24 @@ export default function IocListPage() {
           >
             <ArrowPathIcon className={clsx('w-4 h-4', loadingFiles && 'animate-spin')} />
           </button>
+          {/* Hidden file input for CSV import */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv"
+            multiple
+            className="hidden"
+            onChange={handleImportFiles}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors disabled:opacity-50"
+            title="Select one or more CSV files to import as IOC lists"
+          >
+            <ArrowUpTrayIcon className={clsx('w-4 h-4', importing && 'animate-pulse')} />
+            {importing ? 'Importing…' : 'Import Files'}
+          </button>
           {!showInlineCreate && (
             <button
               onClick={() => { setShowInlineCreate(true); setNewListName(''); setNewListNameError(''); setNewEntries([]) }}
@@ -792,6 +918,49 @@ export default function IocListPage() {
           {filteredFiles.length} {filteredFiles.length === 1 ? 'list' : 'lists'}
           {search && ` matching "${search}"`}
         </p>
+      )}
+
+      {/* ── Import Results Modal ─────────────────────────────────────────── */}
+      {showImportResults && importResults.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">Import Results</h2>
+              <button onClick={() => setShowImportResults(false)} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <ul className="space-y-2 max-h-72 overflow-y-auto">
+              {importResults.map((r, i) => (
+                <li key={i} className={clsx(
+                  'flex items-start gap-2.5 px-3 py-2.5 rounded-lg text-sm',
+                  r.status === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
+                )}>
+                  {r.status === 'success'
+                    ? <CheckCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5 text-emerald-500" />
+                    : <ExclamationCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-500" />}
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{r.name}</p>
+                    {r.message && <p className="text-xs opacity-75 mt-0.5">{r.message}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-between items-center pt-1">
+              <p className="text-xs text-gray-400">
+                {importResults.filter(r => r.status === 'success').length} of {importResults.length} imported successfully
+              </p>
+              <button
+                onClick={() => setShowImportResults(false)}
+                className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Delete Confirm Modal ─────────────────────────────────────────── */}

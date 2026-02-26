@@ -1,0 +1,11 @@
+key,value
+192.168.1.100,malicious-test
+10.0.0.55,suspicious-test
+203.0.113.42,c2-server-test
+198.51.100.7,botnet-test
+172.16.254.1,ransomware-test
+evil-domain.com,phishing-test
+malware-cdn.net,malware-test
+185.220.101.5,tor-exit-node-test
+hack-tool.exe,trojan-test
+suspicious-script.ps1,exploit-test
