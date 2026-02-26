@@ -7,6 +7,7 @@ import { AttackMap } from './attack-map'
 import { AlertsGraph } from './alerts-graph'
 import { GlobalThreatsDisplay } from './global-threats-display'
 import { TopRiskEntities } from './top-risk-entities'
+import { RiskScore } from './risk-score'
 import { CyberNews } from './cyber-news'
 import { useThreatData } from '../../contexts/ThreatDataContext'
 import { useClient } from '@/contexts/ClientContext'
@@ -195,6 +196,9 @@ export function Dashboard() {
 
       {/* Top 5 Risk Entities */}
       <TopRiskEntities className="w-full" />
+
+      {/* Top Risk Score */}
+      <RiskScore className="w-full" />
 
       {/* Cybersecurity News Feed */}
       <CyberNews className="w-full" />
