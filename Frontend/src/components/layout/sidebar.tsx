@@ -54,11 +54,10 @@ export function Sidebar() {
       { name: 'Compliance', href: '/compliance', icon: ShieldCheckIcon, badge: null, requiredPermission: 'compliance:read' },
       { name: 'Asset Register', href: '/asset-register', icon: ServerIcon, badge: null, requiredPermission: 'assets:read' },
       { name: 'Agents Overview', href: '/agents', icon: UsersIcon, badge: null, requiredPermission: 'agents:read' },
-      { name: 'Events By Agent', href: '/events-by-agent', icon: ChartBarSquareIcon, badge: null, requiredPermission: 'alerts:read' },
-      { name: 'Logs (Archives)', href: '/logs-by-agent', icon: DocumentTextIcon, badge: null, requiredPermission: 'alerts:read' },
+      { name: 'Event Ingested', href: '/events-by-agent', icon: ChartBarSquareIcon, badge: null, requiredPermission: 'alerts:read' },
+      { name: 'Log Source Coverage', href: '/logs-by-agent', icon: DocumentTextIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'Rules', href: '/rules', icon: AdjustmentsHorizontalIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'IOC List', href: '/ioc-list', icon: ListBulletIcon, badge: null, requiredPermission: 'alerts:read' },
-      { name: 'Risk Score', href: '/risk-score', icon: FireIcon, badge: null, requiredPermission: 'alerts:read' },
       { name: 'SIEM Portal', href: '/siem', icon: CpuChipIcon, badge: null, requiredPermission: 'siem:access' },
     ]
   }
