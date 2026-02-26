@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { clsx } from 'clsx';
 import { GeneralSettings as GeneralSettingsType } from '../types';
@@ -15,6 +15,49 @@ export default function GeneralSettings({
   onSettingsChange
 }: GeneralSettingsProps) {
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Ensure component is mounted to avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Apply theme whenever settings.theme changes
+  useEffect(() => {
+    if (!mounted) return;
+
+    const root = document.documentElement;
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    // Remove existing theme classes
+    root.classList.remove('light', 'dark');
+    
+    // Apply new theme
+    if (settings.theme === 'system') {
+      root.classList.add(systemPrefersDark ? 'dark' : 'light');
+    } else {
+      root.classList.add(settings.theme);
+    }
+
+    // Save theme preference to localStorage
+    localStorage.setItem('theme', settings.theme);
+  }, [settings.theme, mounted]);
+
+  // Listen for system theme changes
+  useEffect(() => {
+    if (!mounted || settings.theme !== 'system') return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const handleChange = (e: MediaQueryListEvent) => {
+      const root = document.documentElement;
+      root.classList.remove('light', 'dark');
+      root.classList.add(e.matches ? 'dark' : 'light');
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [settings.theme, mounted]);
 
   const updateSettings = (updates: Partial<GeneralSettingsType>) => {
     onSettingsChange({ ...settings, ...updates });
@@ -26,12 +69,24 @@ export default function GeneralSettings({
       // Here you would save to backend
       console.log('Saving general settings:', settings);
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      // Theme is already applied via useEffect, but you might want to show a success message
     } catch (error) {
       console.error('Error saving settings:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Initialize theme from localStorage on component mount
+  useEffect(() => {
+    if (!mounted) return;
+
+    const savedTheme = localStorage.getItem('theme') as GeneralSettingsType['theme'] | null;
+    if (savedTheme && savedTheme !== settings.theme) {
+      updateSettings({ theme: savedTheme });
+    }
+  }, [mounted]);
 
   const timezones = [
     'UTC',
@@ -68,6 +123,11 @@ export default function GeneralSettings({
     { value: 600, label: '10 minutes' },
     { value: 1800, label: '30 minutes' }
   ];
+
+  // Don't render until mounted to avoid hydration mismatch
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -173,6 +233,11 @@ export default function GeneralSettings({
                 </button>
               ))}
             </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+              {settings.theme === 'system' 
+                ? 'Theme follows your system preferences' 
+                : `Theme is set to ${settings.theme} mode`}
+            </p>
           </div>
         </div>
 
