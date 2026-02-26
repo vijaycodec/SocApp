@@ -847,6 +847,10 @@ export const getCdbListFileContentService = async (wazuhCredentials, filename) =
  * Endpoint: PUT {host}/lists/files/{filename}
  * Body: raw key:value text (one entry per line)
  */
+/**
+ * listPath is the full path string e.g. 'etc/lists/amazon'.
+ * We strip the 'etc/lists/' prefix to get the subdirectory.
+ */
 export const saveCdbListFileService = async (wazuhCredentials, filename, content) => {
   const { host } = wazuhCredentials;
 

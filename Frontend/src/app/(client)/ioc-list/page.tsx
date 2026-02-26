@@ -591,8 +591,10 @@ export default function IocListPage() {
       {showInlineCreate && (
         <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10 overflow-hidden">
           {/* Name row */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-blue-100 dark:border-blue-800/50 flex-wrap">
-            <div className="flex-1 min-w-48 space-y-1">
+          <div className="flex items-start gap-3 px-4 py-3 border-b border-blue-100 dark:border-blue-800/50 flex-wrap">
+            {/* List name */}
+            <div className="flex-1 min-w-44 space-y-1">
+              <label className="text-xs font-medium text-blue-700 dark:text-blue-400">Name</label>
               <input
                 autoFocus
                 type="text"
@@ -613,8 +615,10 @@ export default function IocListPage() {
                   {newListNameError}
                 </p>
               )}
+              <p className="text-xs text-blue-400">Saved to: <span className="font-medium font-mono">etc/lists</span></p>
             </div>
-            <div className="flex items-center gap-2 ml-auto">
+
+            <div className="flex items-center gap-2 self-end pb-0.5">
               <button
                 onClick={addNewEntry}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm border border-blue-400 dark:border-blue-600 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
