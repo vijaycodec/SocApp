@@ -261,8 +261,10 @@ export function RiskScore({ className = '' }: RiskScoreProps) {
       const orgId = isClientMode && selectedClient?.id ? selectedClient.id : undefined;
       
       // Note: You may need to update your API to support hours parameter
-      const data = await wazuhApi.getDashboardMetrics(orgId);
-      
+      const raw = await wazuhApi.getDashboardMetrics(orgId);
+      // Backend wraps response in ApiResponse: { statusCode, data: {...}, message }
+      const data = raw?.data ?? raw;
+
       setMetrics({
         critical_alerts: data.critical_alerts ?? 0,
         major_alerts: data.major_alerts ?? 0,
